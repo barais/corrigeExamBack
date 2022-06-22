@@ -1,1 +1,5 @@
-id;name
+id;name;course_id
+1;Exam1;1
+2;Exam2;1
+3;Exam3;2
+4;Exam4;3

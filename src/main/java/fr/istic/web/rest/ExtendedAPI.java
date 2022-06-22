@@ -7,33 +7,46 @@ import fr.istic.domain.CourseGroup;
 import fr.istic.domain.Exam;
 import fr.istic.domain.ExamSheet;
 import fr.istic.domain.FinalResult;
+import fr.istic.domain.Question;
 import fr.istic.domain.Student;
 import fr.istic.domain.StudentResponse;
 import fr.istic.domain.User;
 import fr.istic.security.AuthoritiesConstants;
 import fr.istic.service.CourseGroupService;
 import fr.istic.service.MailService;
-
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import fr.istic.service.StudentService;
 import fr.istic.service.customdto.MailResultDTO;
 import fr.istic.service.customdto.StudentMassDTO;
 import fr.istic.service.customdto.StudentResultDTO;
-
-import javax.annotation.security.RolesAllowed;
-import javax.enterprise.context.ApplicationScoped;
-import javax.inject.Inject;
-import javax.transaction.Transactional;
-import javax.ws.rs.*;
-import javax.ws.rs.core.*;
-
+import fr.istic.service.customdto.SummaryElementDTO;
+import fr.istic.service.customdto.SummaryExamDTO;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.stream.Collectors;
+import javax.annotation.security.RolesAllowed;
+import javax.enterprise.context.ApplicationScoped;
+import javax.inject.Inject;
+import javax.transaction.Transactional;
+import javax.ws.rs.Consumes;
+import javax.ws.rs.DELETE;
+import javax.ws.rs.GET;
+import javax.ws.rs.POST;
+import javax.ws.rs.PUT;
+import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
+import javax.ws.rs.Produces;
+import javax.ws.rs.core.Context;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
+import javax.ws.rs.core.SecurityContext;
+import org.apache.commons.lang3.tuple.Pair;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /**
  * REST controller for managing {@link fr.istic.domain.Comments}.
@@ -352,4 +365,78 @@ public class ExtendedAPI {
         return Response.ok().build();
     }
 
+
+	@GET
+	@Path("summary/exam/{examId}")
+	@RolesAllowed({AuthoritiesConstants.USER, AuthoritiesConstants.ADMIN})
+	@Transactional
+	public Response getSummaryExam(@PathParam("examId") final long examId) {
+		final Exam exam = Exam.findById(examId);
+
+		System.out.println(exam);
+		System.out.println(exam.scanfile);
+
+		if(exam == null || exam.scanfile == null || exam.scanfile.sheets == null) {
+			return Response.status(Response.Status.BAD_REQUEST).build();
+		}
+
+		// Getting all the questions of the exam, sorted by ID
+		final List<Question> questions = Question.findQuestionbyExamId(examId)
+			.list()
+			.stream().sorted(Comparator.comparingLong(std -> std.id))
+			.collect(Collectors.toList());
+
+		final Map<Long, List<StudentResponse>> responsesBySheet = exam.scanfile.sheets
+			.parallelStream()
+			// Getting all the responses of each sheet, and sorting the responses by their question id
+			.map(sh -> Pair.of(sh.id, StudentResponse.findStudentResponsesbysheetId(sh.id)
+					.list().stream().sorted(Comparator.comparingLong(std -> std.question.id)).collect(Collectors.toList())))
+			.collect(Collectors.toMap(Pair::getLeft, Pair::getRight));
+
+		// Producing DTOs for sheets
+		final var sheetsDTO = responsesBySheet
+			.entrySet()
+			.stream()
+			.sorted(Comparator.comparingLong(Map.Entry::getKey))
+			.map(sh -> {
+				final List<StudentResponse> resp = sh.getValue();
+				return createSummaryElementDTO(resp, sh.getKey(), questions.size(), i -> resp.get(i).question.id);
+			})
+			.collect(Collectors.toList());
+
+		// Sorting responses by questions
+		final var responsesByQuestion = responsesBySheet.values()
+			.stream()
+			.flatMap(s -> s.stream())
+			.collect(Collectors.groupingBy(e -> e.question.id));
+
+		// Producing DTOs for questions
+		final var questionsDTO = questions
+			.stream()
+			.map(q -> {
+				final List<StudentResponse> resp = responsesByQuestion.get(q.id);
+				return createSummaryElementDTO(resp, q.id, exam.scanfile.sheets.size(), i -> resp.get(i).sheet.id);
+			})
+			.collect(Collectors.toList());
+
+			return Response.ok().entity(new SummaryExamDTO(questionsDTO, sheetsDTO)).build();
+	}
+
+
+	private SummaryElementDTO createSummaryElementDTO(final List<StudentResponse> resp, final Long id, final int size,
+		final Function<Integer, Long> getterID) {
+		if(resp == null) {
+			return new SummaryElementDTO(id, 1, 0);
+		}else {
+			int firstUnrated = 0;
+
+			if(resp.size() != size) {
+				for(int i = 0; i < resp.size() && firstUnrated != getterID.apply(i); i++) {
+					firstUnrated++;
+				}
+			}
+
+			return new SummaryElementDTO(id, firstUnrated, resp.size());
+		}
+	}
 }

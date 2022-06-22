@@ -1,1 +1,16 @@
 id;name;firstname;ine;caslogin;mail
+1;a;aa;100001;a;a@foo.com
+2;b;bb;100002;b;b@foo.com
+3;c;cc;100003;c;c@foo.com
+4;d;dd;100004;d;d@foo.com
+5;e;ee;100005;e;r@foo.com
+6;f;ff;100006;f;f@foo.com
+7;g;gg;100007;g;g@foo.com
+8;h;hh;100008;h;h@foo.com
+9;i;ii;100009;i;i@foo.com
+10;j;jj;100010;j;j@foo.com
+11;k;kk;100011;k;k@foo.com
+12;l;ll;100012;l;l@foo.com
+13;m;mm;100013;m;m@foo.com
+14;n;nn;100014;n;n@foo.com
+15;o;oo;100015;o;o@foo.com
